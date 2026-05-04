@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EMA Strategy Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  body { background:#0f172a; color:#f1f5f9; font-family:system-ui,sans-serif; }
+  .tab-btn { padding:6px 14px; border-radius:6px; font-size:13px; cursor:pointer; transition:background .15s; }
+  .tab-btn.active { background:#1e40af; color:#fff; }
+  .tab-btn:not(.active) { color:#94a3b8; }
+  .tab-btn:not(.active):hover { background:#1e293b; color:#e2e8f0; }
+  .signal-chip { display:inline-block; padding:2px 9px; border-radius:4px; font-size:11px; font-weight:700; white-space:nowrap; }
+  .sb  { background:#dcfce7; color:#14532d; }
+  .b   { background:#d1fae5; color:#065f46; }
+  .s   { background:#fef3c7; color:#92400e; }
+  .ss  { background:#fee2e2; color:#991b1b; }
+  .h   { background:#1e293b; color:#64748b; }
+  table { border-collapse:collapse; width:100%; }
+  th,td { text-align:left; padding:8px 12px; border-bottom:1px solid #1e293b; white-space:nowrap; }
+  th { font-size:11px; text-transform:uppercase; color:#64748b; cursor:pointer; user-select:none; }
+  th:hover { color:#94a3b8; }
+  tr:hover td { background:#1e293b; }
+  .rsi-hi { color:#ef4444; font-weight:700; }
+  .rsi-lo { color:#22c55e; font-weight:700; }
+  input[type=text], select { background:#1e293b; border:1px solid #334155; color:#f1f5f9; padding:6px 10px; border-radius:6px; font-size:13px; outline:none; }
+  input[type=text]:focus, select:focus { border-color:#3b82f6; }
+  canvas { max-height:180px; }
+  .panel { background:#1e293b; border-radius:10px; padding:20px; margin-bottom:16px; }
+  .toast { position:fixed; bottom:24px; right:24px; padding:10px 18px; border-radius:9px; font-size:13px; font-weight:600; z-index:9999; opacity:0; transform:translateY(8px); transition:opacity .25s,transform .25s; pointer-events:none; }
+  .toast.show { opacity:1; transform:translateY(0); }
+  .toast.success { background:#065f46; color:#d1fae5; }
+  .toast.info    { background:#1e3a8a; color:#bfdbfe; }
+  .toast.error   { background:#991b1b; color:#fee2e2; }
+</style>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+<div id="app">
+
+<!-- Header -->
+<header style="background:#0f172a;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:50;padding:0 20px">
+  <div style="max-width:1400px;margin:0 auto;height:52px;display:flex;align-items:center;gap:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-right:8px">
+      <div style="width:32px;height:32px;background:#1d4ed8;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">📈</div>
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#fff">EMA Strategy</div>
+        <div style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.08em">Signal Monitor</div>
+      </div>
+    </div>
+    <nav style="display:flex;gap:4px">
+      <button class="tab-btn active" onclick="showTab('dashboard')">🏠 Dashboard</button>
+      <button class="tab-btn" onclick="showTab('signals')">📊 Signals</button>
+      <button class="tab-btn" onclick="showTab('charts')">📉 Charts</button>
+      <button class="tab-btn" onclick="showTab('wealth')">💰 Wealth</button>
+      <button class="tab-btn" onclick="showTab('portfolio')">💼 Portfolio</button>
+      <button class="tab-btn" onclick="showTab('universe')">🔭 Universe</button>
+    </nav>
+    <div style="margin-left:auto;font-size:11px;color:#475569" id="scanTime"></div>
+  </div>
+</header>
+
+<!-- Content -->
+<div style="max-width:1400px;margin:0 auto;padding:24px 20px">
+
+  <!-- DASHBOARD TAB -->
+  <div id="tab-dashboard">
+    <!-- Summary cards -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px" id="summary-cards"></div>
+    <!-- Two-col: actionable table + portfolio -->
+    <div style="display:grid;grid-template-columns:1fr 360px;gap:16px" id="dashboard-grid">
+      <div class="panel">
+        <h2 style="font-size:15px;font-weight:700;margin:0 0 14px">🚨 Actionable Signals</h2>
+        <div id="dash-signals"></div>
+      </div>
+      <div class="panel">
+        <h2 style="font-size:15px;font-weight:700;margin:0 0 14px">💼 Portfolio</h2>
+        <div id="dash-portfolio"></div>
+      </div>
+    </div>
+    <!-- Rules -->
+    <div style="background:#172554;border:1px solid #1e40af;border-radius:10px;padding:16px 20px;font-size:12px;color:#93c5fd;margin-top:4px">
+      <strong style="color:#60a5fa">📋 EMA Strategy Rules:</strong>
+      <span style="margin-left:8px">🟢 <b>Strong Buy:</b> EMA50 crosses above EMA100 AND RSI&gt;60</span>
+      <span style="margin-left:16px">↑ <b>Buy:</b> EMA50&gt;EMA100 AND RSI 45–60</span>
+      <span style="margin-left:16px">↓ <b>Sell (owned):</b> Price &lt; EMA50</span>
+      <span style="margin-left:16px">🔴 <b>Strong Sell (owned):</b> Price &lt; EMA100</span>
+    </div>
+  </div>
+
+  <!-- SIGNALS TAB -->
+  <div id="tab-signals" style="display:none">
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <h2 style="font-size:15px;font-weight:700;margin:0">All Signals</h2>
+        <input type="text" id="sig-search" placeholder="Search symbol…" oninput="renderSignals()" style="width:150px">
+        <select id="sig-filter" onchange="renderSignals()">
+          <option value="">All signals</option>
+          <option value="strong-buy">Strong Buy</option>
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+          <option value="strong-sell">Strong Sell</option>
+          <option value="hold">Hold</option>
+        </select>
+        <label style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="sig-owned" onchange="renderSignals()"> Owned only
+        </label>
+        <span id="sig-count" style="font-size:12px;color:#64748b;margin-left:auto"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="sig-table">
+          <thead>
+            <tr>
+              <th onclick="sortBy('sym')">Symbol ↕</th>
+              <th onclick="sortBy('price')">Price ↕</th>
+              <th onclick="sortBy('ema50')">EMA 50 ↕</th>
+              <th onclick="sortBy('ema100')">EMA 100 ↕</th>
+              <th onclick="sortBy('rsi')">RSI 14 ↕</th>
+              <th onclick="sortBy('signal')">Signal ↕</th>
+              <th>Owned</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="sig-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHARTS TAB -->
+  <div id="tab-charts" style="display:none">
+    <div class="panel" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="font-size:15px;font-weight:700;margin:0">Price Charts</h2>
+        <!-- Strategy toggle -->
+        <div style="display:flex;gap:2px;background:#0f172a;border-radius:8px;padding:3px">
+          <button id="chart-mode-ema" onclick="setChartMode('ema')"
+            style="padding:5px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:#1e40af;color:#fff">
+            📊 EMA Strategy (Daily)
+          </button>
+          <button id="chart-mode-wealth" onclick="setChartMode('wealth')"
+            style="padding:5px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:#94a3b8">
+            💰 Wealth Creation (Weekly)
+          </button>
+        </div>
+        <input type="text" id="chart-search" placeholder="Filter symbol…" oninput="renderCharts()" style="width:150px">
+        <select id="chart-filter" onchange="renderCharts()">
+          <option value="">All signals</option>
+          <option value="strong-buy">Strong Buy only</option>
+          <option value="buy">Buy only</option>
+          <option value="sell">Sell only</option>
+          <option value="strong-sell">Strong Sell only</option>
+          <option value="actionable">All actionable</option>
+        </select>
+        <span id="chart-mode-label" style="font-size:11px;color:#64748b"></span>
+      </div>
+    </div>
+    <div id="chart-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px"></div>
+  </div>
+
+  <!-- WEALTH CREATION TAB -->
+  <div id="tab-wealth" style="display:none">
+    <div id="wealth-notice" style="background:#1c1917;border:1px solid #78350f;border-radius:8px;padding:12px 16px;font-size:12px;color:#fbbf24;margin-bottom:16px">
+      ⚠️ Weekly signal data not available in this scan. Run <code style="background:#292524;padding:2px 6px;border-radius:4px">node generate.js --scan</code> to generate fresh Wealth Creation signals.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px" id="wealth-cards"></div>
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <h2 style="font-size:15px;font-weight:700;margin:0">📅 Weekly Signals</h2>
+        <input type="text" id="wealth-search" placeholder="Search symbol…" oninput="renderWealth()" style="width:150px">
+        <select id="wealth-filter" onchange="renderWealth()">
+          <option value="">All signals</option>
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+          <option value="hold">Hold</option>
+        </select>
+        <label style="font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="wealth-owned" onchange="renderWealth()"> Owned only
+        </label>
+        <span id="wealth-count" style="font-size:12px;color:#64748b;margin-left:auto"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="wealth-table">
+          <thead>
+            <tr>
+              <th onclick="wSortBy('sym')">Symbol ↕</th>
+              <th onclick="wSortBy('price')">Price ↕</th>
+              <th onclick="wSortBy('ma20w')">MA20 (W) ↕</th>
+              <th onclick="wSortBy('rsiW')">RSI (W) ↕</th>
+              <th onclick="wSortBy('wealthSignal')">Signal ↕</th>
+              <th>Owned</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="wealth-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div style="background:#172554;border:1px solid #1e40af;border-radius:10px;padding:16px 20px;font-size:12px;color:#93c5fd;margin-top:4px">
+      <strong style="color:#60a5fa">📋 Wealth Creation Strategy Rules (Weekly Chart):</strong>
+      <span style="margin-left:8px">🟢 <b>Buy:</b> Price &gt; MA20(W) AND RSI(W) &gt; 60</span>
+      <span style="margin-left:16px">↓ <b>Sell:</b> Price &lt; MA20(W)</span>
+    </div>
+  </div>
+
+  <!-- PORTFOLIO TAB -->
+  <div id="tab-portfolio" style="display:none">
+    <div class="panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <h2 style="font-size:15px;font-weight:700;margin:0">💼 Portfolio <span style="font-size:11px;color:#64748b;font-weight:400">(edits auto-saved in browser — click Download to write config.json)</span></h2>
+        <button onclick="saveConfig()" style="background:#1e40af;color:#fff;border:none;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600">⬇ Download config.json</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+        <div><div style="font-size:10px;color:#64748b;margin-bottom:4px;text-transform:uppercase">Symbol</div>
+          <input type="text" id="add-sym" placeholder="AAPL" style="width:90px;text-transform:uppercase"></div>
+        <div><div style="font-size:10px;color:#64748b;margin-bottom:4px;text-transform:uppercase">Qty</div>
+          <input type="number" id="add-qty" placeholder="10" style="width:80px"></div>
+        <div><div style="font-size:10px;color:#64748b;margin-bottom:4px;text-transform:uppercase">Avg Price $</div>
+          <input type="number" id="add-price" placeholder="150" style="width:100px"></div>
+        <button onclick="portAddRow()" style="background:#065f46;color:#d1fae5;border:none;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600">+ Add Position</button>
+      </div>
+      <div style="overflow-x:auto" id="port-table"></div>
+    </div>
+  </div>
+
+  <!-- UNIVERSE TAB -->
+  <div id="tab-universe" style="display:none">
+    <div class="panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <h2 style="font-size:15px;font-weight:700;margin:0">🔭 Scan Universe <span style="font-size:11px;color:#64748b;font-weight:400">(custom stocks only — default NASDAQ100 always included)</span></h2>
+        <button onclick="saveConfig()" style="background:#1e40af;color:#fff;border:none;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600">⬇ Download config.json</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:20px;align-items:flex-end">
+        <div><div style="font-size:10px;color:#64748b;margin-bottom:4px;text-transform:uppercase">Add Custom Stock</div>
+          <input type="text" id="add-univ" placeholder="e.g. PLTR" style="width:120px;text-transform:uppercase"
+            onkeydown="if(event.key==='Enter') univAddCustom()"></div>
+        <button onclick="univAddCustom()" style="background:#1e40af;color:#dbeafe;border:none;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600">+ Add</button>
+      </div>
+      <div style="margin-bottom:24px">
+        <div style="font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:10px;text-transform:uppercase">Custom Stocks (added to scan)</div>
+        <div id="univ-custom-chips" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:10px;text-transform:uppercase">Default Universe — NASDAQ 100 + ETFs (read-only, always scanned)</div>
+        <div id="univ-default-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /max-width -->
+</div><!-- /app -->
+
+<script>
+const RAW = {"results":[],"portfolio":[{"sym":"AAPL","qty":10,"avgPrice":150}],"scanTs":"2026-05-04T02:01:56.634Z","defaultUniverse":["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","COST","NFLX","AMD","QCOM","PEP","CSCO","ADBE","HON","INTU","AMGN","TXN","SBUX","REGN","GILD","VRTX","ADI","ISRG","LRCX","AMAT","KLAC","CDNS","SNPS","CRWD","PANW","FTNT","MRVL","DXCM","IDXX","ORLY","FAST","PCAR","CTAS","PAYX","MCHP","CPRT","ODFL","BIIB","MRNA","KDP","MNST","DLTR","ANSS","BKNG","EBAY","PYPL","ABNB","CSX","EA","NXPI","WDAY","CHTR","LULU","ROST","CTSH","MELI","DDOG","COIN","OKTA","TEAM","ZS","QQQM","NRGU"],"customStocks":["QQQM"]};
+const { results, portfolio: rawPortfolio, scanTs, defaultUniverse, customStocks: rawCustom } = RAW;
+
+// ── Mutable state (localStorage-backed) ──────────────────────────────
+let portData   = JSON.parse(localStorage.getItem('ema_portfolio') || 'null') ?? [...rawPortfolio];
+let customData = JSON.parse(localStorage.getItem('ema_custom')    || 'null') ?? [...rawCustom];
+
+function savePortToStorage()   { localStorage.setItem('ema_portfolio', JSON.stringify(portData)); }
+function saveCustomToStorage() { localStorage.setItem('ema_custom',    JSON.stringify(customData)); }
+
+// ── Signal helpers ────────────────────────────────────────────────────
+const SIG_CLASS = { "strong-buy":"sb","buy":"b","sell":"s","strong-sell":"ss","hold":"h" };
+const SIG_LABEL = { "strong-buy":"STRONG BUY","buy":"BUY","sell":"SELL","strong-sell":"STRONG SELL","hold":"HOLD" };
+const SIG_ORDER = { "strong-buy":0,"buy":1,"sell":2,"strong-sell":3,"hold":4 };
+function chip(sig) {
+  return `<span class="signal-chip ${SIG_CLASS[sig]||"h"}">${SIG_LABEL[sig]||sig.toUpperCase()}</span>`;
+}
+function rsiCell(v) {
+  if (v==null) return "—";
+  if (v>70) return `<span class="rsi-hi">${v}</span>`;
+  if (v<30) return `<span class="rsi-lo">${v}</span>`;
+  return v;
+}
+function fmt(v) { return v!=null ? "$"+v : "—"; }
+
+// Scan timestamp
+if (scanTs) {
+  document.getElementById("scanTime").textContent = "Last scan: " + new Date(scanTs).toLocaleString();
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────
+function showTab(id) {
+  ["dashboard","signals","charts","wealth","portfolio","universe"].forEach(t => {
+    document.getElementById("tab-"+t).style.display = t===id ? "" : "none";
+  });
+  document.querySelectorAll(".tab-btn").forEach((b,i) => {
+    b.classList.toggle("active", ["dashboard","signals","charts","wealth","portfolio","universe"][i]===id);
+  });
+  if (id==="charts")   renderCharts();
+  if (id==="universe") renderUniverse();
+}
+
+// ── Sort state ────────────────────────────────────────────────────────
+let sortKey = "signal", sortDir = 1;
+function sortBy(key) {
+  if (sortKey===key) sortDir*=-1; else { sortKey=key; sortDir=1; }
+  renderSignals();
+}
+
+// ── Summary Cards ─────────────────────────────────────────────────────
+function renderSummary() {
+  const counts = {};
+  results.forEach(r => { counts[r.signal]=(counts[r.signal]||0)+1; });
+  const cards = [
+    { label:"Strong Buy",  key:"strong-buy",  bg:"#14532d", fg:"#dcfce7", icon:"🟢" },
+    { label:"Buy",         key:"buy",          bg:"#065f46", fg:"#d1fae5", icon:"↑" },
+    { label:"Sell",        key:"sell",         bg:"#92400e", fg:"#fef3c7", icon:"↓" },
+    { label:"Strong Sell", key:"strong-sell",  bg:"#991b1b", fg:"#fee2e2", icon:"🔴" },
+    { label:"Hold",        key:"hold",         bg:"#1e293b", fg:"#94a3b8", icon:"—" },
+  ];
+  document.getElementById("summary-cards").innerHTML = cards.map(c => `
+    <div style="background:#1e293b;border-radius:10px;padding:16px 18px;border-left:4px solid ${c.bg}">
+      <div style="font-size:28px;font-weight:800;color:${c.fg}">${counts[c.key]||0}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px">${c.icon} ${c.label}</div>
+    </div>
+  `).join("") + `
+    <div style="background:#1e293b;border-radius:10px;padding:16px 18px;border-left:4px solid #1d4ed8">
+      <div style="font-size:28px;font-weight:800;color:#93c5fd">${results.length}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px">📋 Scanned</div>
+    </div>
+  `;
+}
+
+// ── Dashboard signals ─────────────────────────────────────────────────
+function renderDashSignals() {
+  const actionable = results.filter(r=>r.signal!=="hold")
+    .sort((a,b)=>(SIG_ORDER[a.signal]??9)-(SIG_ORDER[b.signal]??9));
+  if (!actionable.length) {
+    document.getElementById("dash-signals").innerHTML =
+      '<p style="color:#64748b;font-size:13px;text-align:center;padding:24px">No actionable signals today.</p>';
+    return;
+  }
+  document.getElementById("dash-signals").innerHTML = `
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Symbol</th><th>Price</th><th>EMA50</th><th>EMA100</th><th>RSI</th><th>Signal</th></tr></thead>
+      <tbody>${actionable.map(r=>`<tr>
+        <td style="font-weight:700">${r.sym}</td><td>${fmt(r.price)}</td>
+        <td>${fmt(r.ema50)}</td><td>${fmt(r.ema100)}</td>
+        <td>${rsiCell(r.rsi)}</td><td>${chip(r.signal)}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>`;
+}
+
+// ── Dashboard portfolio (read-only snapshot from portData) ────────────
+function renderDashPortfolio() {
+  const el = document.getElementById("dash-portfolio");
+  if (!portData.length) {
+    el.innerHTML = '<p style="color:#64748b;font-size:12px">No portfolio. Add stocks in the Portfolio tab.</p>';
+    return;
+  }
+  const rows = portData.map(p => {
+    const r = results.find(x=>x.sym===p.sym);
+    if (!r) return `<tr><td style="font-weight:700">${p.sym}</td><td colspan=3 style="color:#64748b">No data</td></tr>`;
+    const pnl = (r.price - p.avgPrice) * p.qty;
+    return `<tr>
+      <td style="font-weight:700">${p.sym}</td><td>${fmt(r.price)}</td>
+      <td style="color:${pnl>=0?"#22c55e":"#ef4444"};font-weight:700">${pnl>=0?"+":"-"}$${Math.abs(pnl).toFixed(0)}</td>
+      <td>${chip(r.signal)}</td></tr>`;
+  }).join("");
+  el.innerHTML = `<div style="overflow-x:auto"><table>
+    <thead><tr><th>Sym</th><th>Price</th><th>P&L</th><th>Signal</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+// ── All Signals tab ───────────────────────────────────────────────────
+function renderSignals() {
+  const q    = (document.getElementById("sig-search").value||"").toUpperCase();
+  const filt = document.getElementById("sig-filter").value;
+  const ownedOnly = document.getElementById("sig-owned").checked;
+  let rows = results.filter(r =>
+    (!q || r.sym.includes(q)) && (!filt || r.signal===filt) && (!ownedOnly || r.isOwned));
+  rows = [...rows].sort((a,b) => {
+    let va = a[sortKey], vb = b[sortKey];
+    if (sortKey==="signal") { va=SIG_ORDER[a.signal]??9; vb=SIG_ORDER[b.signal]??9; }
+    if (typeof va==="string") return sortDir*(va.localeCompare(vb));
+    return sortDir*((va??-Infinity)-(vb??-Infinity));
+  });
+  document.getElementById("sig-count").textContent = rows.length+" symbols";
+  document.getElementById("sig-tbody").innerHTML = rows.map(r=>`<tr>
+    <td style="font-weight:700">${r.sym}</td><td>${fmt(r.price)}</td>
+    <td>${fmt(r.ema50)}</td><td>${fmt(r.ema100)}</td>
+    <td>${rsiCell(r.rsi)}</td><td>${chip(r.signal)}</td>
+    <td style="color:#3b82f6">${r.isOwned?"✓":""}</td>
+    <td style="color:#64748b">${r.date||""}</td>
+  </tr>`).join("");
+}
+
+// ── Charts tab ────────────────────────────────────────────────────────
+const chartInstances = {};
+let chartMode = 'ema';
+
+function setChartMode(mode) {
+  chartMode = mode;
+  const emaBtn    = document.getElementById("chart-mode-ema");
+  const wealthBtn = document.getElementById("chart-mode-wealth");
+  emaBtn.style.background    = mode==='ema'    ? '#1e40af' : 'transparent';
+  emaBtn.style.color         = mode==='ema'    ? '#fff'    : '#94a3b8';
+  wealthBtn.style.background = mode==='wealth' ? '#065f46' : 'transparent';
+  wealthBtn.style.color      = mode==='wealth' ? '#d1fae5' : '#94a3b8';
+  document.getElementById("chart-mode-label").textContent =
+    mode==='ema' ? 'EMA50 + EMA100 (daily)' : 'MA20 + RSI (weekly)';
+  renderCharts();
+}
+
+function renderCharts() {
+  const q    = (document.getElementById("chart-search").value||"").toUpperCase();
+  const filt = document.getElementById("chart-filter").value;
+  let rows = results.filter(r => {
+    if (q && !r.sym.includes(q)) return false;
+    if (!filt) return true;
+    if (filt==="actionable") return r.signal!=="hold";
+    return r.signal===filt;
+  }).slice(0, 50);
+
+  const grid = document.getElementById("chart-grid");
+  Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch {} });
+  Object.keys(chartInstances).forEach(k => delete chartInstances[k]);
+
+  const isWealth = chartMode === 'wealth';
+  grid.innerHTML = rows.map(r => {
+    const sigToShow = isWealth ? (r.wealthSignal||'hold') : r.signal;
+    const rsiToShow = isWealth ? r.rsiW : r.rsi;
+    return `<div class="panel" style="padding:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700;font-size:14px">${r.sym}</span>
+        ${chip(sigToShow)}
+        <span style="font-size:12px;color:#64748b">RSI:${rsiToShow??'—'}${isWealth?' (W)':''}</span>
+      </div>
+      <canvas id="c-${r.sym}"></canvas>
+    </div>`;
+  }).join("");
+
+  rows.forEach(r => {
+    const ctx = document.getElementById("c-"+r.sym);
+    if (!ctx) return;
+    let datasets, labels;
+    if (isWealth && r.weeklySpark) {
+      labels   = r.weeklySpark.dates;
+      datasets = [
+        { label:"Price (W)",  data:r.weeklySpark.price, borderColor:"#60a5fa", borderWidth:2, pointRadius:0, tension:.3 },
+        { label:"MA20 (W)",   data:r.weeklySpark.ma20,  borderColor:"#f59e0b", borderWidth:1.5, pointRadius:0, tension:.3, borderDash:[4,2] },
+      ];
+    } else if (!isWealth && r.spark) {
+      labels   = r.spark.dates;
+      datasets = [
+        { label:"Price",  data:r.spark.price,  borderColor:"#60a5fa", borderWidth:2, pointRadius:0, tension:.3 },
+        { label:"EMA50",  data:r.spark.ema50,  borderColor:"#f59e0b", borderWidth:1.5, pointRadius:0, tension:.3, borderDash:[4,2] },
+        { label:"EMA100", data:r.spark.ema100, borderColor:"#a78bfa", borderWidth:1.5, pointRadius:0, tension:.3, borderDash:[4,2] },
+      ];
+    } else return;
+    chartInstances[r.sym] = new Chart(ctx, {
+      type:"line",
+      data:{ labels, datasets },
+      options:{
+        responsive:true, animation:false,
+        plugins:{ legend:{ labels:{ color:"#94a3b8",font:{size:10}, boxWidth:16, padding:8 } } },
+        scales:{
+          x:{ ticks:{color:"#475569",maxTicksLimit:6,font:{size:9}}, grid:{color:"#1e293b"} },
+          y:{ ticks:{color:"#475569",font:{size:9}}, grid:{color:"#1e293b"} },
+        },
+      },
+    });
+  });
+}
+
+// ── Portfolio tab (editable) ──────────────────────────────────────────
+function portUpdateRow(i, field, val) {
+  portData[i][field] = field==='sym' ? val.toUpperCase() : parseFloat(val)||0;
+  savePortToStorage();
+  renderDashPortfolio();
+}
+
+function portDeleteRow(i) {
+  portData.splice(i, 1);
+  savePortToStorage();
+  renderPortfolio();
+  renderDashPortfolio();
+}
+
+function portAddRow() {
+  const sym   = (document.getElementById("add-sym").value||"").trim().toUpperCase();
+  const qty   = parseFloat(document.getElementById("add-qty").value)||0;
+  const price = parseFloat(document.getElementById("add-price").value)||0;
+  if (!sym) { alert("Symbol is required"); return; }
+  if (portData.find(p=>p.sym===sym)) { alert(sym+" is already in portfolio"); return; }
+  portData.push({ sym, qty, avgPrice: price });
+  savePortToStorage();
+  document.getElementById("add-sym").value = "";
+  document.getElementById("add-qty").value = "";
+  document.getElementById("add-price").value = "";
+  renderPortfolio();
+  renderDashPortfolio();
+}
+
+function renderPortfolio() {
+  const el = document.getElementById("port-table");
+  if (!portData.length) {
+    el.innerHTML = '<p style="color:#64748b;font-size:13px">No positions yet. Use the form above to add one.</p>';
+    return;
+  }
+  const inputStyle = 'background:#0f172a;border:1px solid #334155;color:#f1f5f9;padding:4px 6px;border-radius:4px;font-size:12px';
+  const rows = portData.map((p, i) => {
+    const r   = results.find(x=>x.sym===p.sym);
+    const price = r ? r.price : null;
+    const sig   = r ? r.signal : 'hold';
+    const pnl   = (r && p.avgPrice) ? (r.price - p.avgPrice) * p.qty : null;
+    const pnlPct = (r && p.avgPrice) ? ((r.price-p.avgPrice)/p.avgPrice*100).toFixed(1) : null;
+    const pnlStr = pnl!=null
+      ? `<span style="color:${pnl>=0?'#22c55e':'#ef4444'};font-weight:700">${pnl>=0?'+':'-'}$${Math.abs(pnl).toFixed(0)} (${pnl>=0?'+':''}${pnlPct}%)</span>`
+      : '<span style="color:#64748b">—</span>';
+    return `<tr>
+      <td style="font-weight:700">${p.sym}</td>
+      <td><input type="number" value="${p.qty}" style="width:70px;${inputStyle}"
+          onchange="portUpdateRow(${i},'qty',this.value)"></td>
+      <td><input type="number" value="${p.avgPrice}" style="width:90px;${inputStyle}"
+          onchange="portUpdateRow(${i},'avgPrice',this.value)"></td>
+      <td>${price!=null?fmt(price):'<span style="color:#64748b">—</span>'}</td>
+      <td>${pnlStr}</td>
+      <td>${price!=null?`${fmt(r.ema50)} / ${fmt(r.ema100)}`:'—'}</td>
+      <td>${price!=null?rsiCell(r.rsi):'—'}</td>
+      <td>${chip(sig)}</td>
+      <td><button onclick="portDeleteRow(${i})"
+          style="background:#7f1d1d;color:#fca5a5;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px">✕</button></td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Symbol</th><th>Qty</th><th>Avg Cost</th><th>Price</th>
+      <th>P&amp;L</th><th>EMA50/100</th><th>RSI</th><th>Signal</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ── Universe tab (editable custom stocks) ─────────────────────────────
+function univAddCustom() {
+  const sym = (document.getElementById("add-univ").value||"").trim().toUpperCase();
+  if (!sym) return;
+  if (customData.includes(sym)||defaultUniverse.includes(sym)) {
+    alert(sym+" is already in the scan list"); return;
+  }
+  customData.push(sym);
+  saveCustomToStorage();
+  document.getElementById("add-univ").value = "";
+  renderUniverse();
+}
+
+function univRemoveCustom(sym) {
+  customData = customData.filter(s=>s!==sym);
+  saveCustomToStorage();
+  renderUniverse();
+}
+
+function renderUniverse() {
+  const custEl = document.getElementById("univ-custom-chips");
+  const defEl  = document.getElementById("univ-default-chips");
+
+  custEl.innerHTML = customData.length
+    ? customData.map(s=>`
+        <span style="display:inline-flex;align-items:center;gap:5px;background:#1e3a8a;color:#93c5fd;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">
+          ${s}
+          <button onclick="univRemoveCustom('${s}')" style="background:none;border:none;color:#60a5fa;cursor:pointer;font-size:14px;line-height:1;padding:0">×</button>
+        </span>`).join("")
+    : '<span style="color:#475569;font-size:12px">No custom stocks. Add above.</span>';
+
+  defEl.innerHTML = defaultUniverse.map(s=>`
+    <span style="display:inline-block;background:#1e293b;color:#475569;padding:3px 9px;border-radius:12px;font-size:11px">${s}</span>
+  `).join("");
+}
+
+// ── Save / Download config.json ───────────────────────────────────────
+// When served via --serve mode, POSTs to local server (auto-saves to disk).
+// When opened as a static file, falls back to browser download.
+async function saveConfig() {
+  const cfg = JSON.stringify({ portfolio: portData, customStocks: customData }, null, 2);
+  try {
+    const res = await fetch("/api/save-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: cfg,
+    });
+    if (res.ok) { showToast("✅ config.json saved to disk!", "success"); return; }
+  } catch {}
+  // Fallback: trigger browser download
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([cfg], { type: "application/json" }));
+  a.download = "config.json";
+  a.click();
+  showToast("⬇ Downloaded config.json — replace the file in your project folder", "info");
+}
+
+function showToast(msg, type) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast show " + (type || "info");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 3500);
+}
+
+// ── Wealth Creation tab ───────────────────────────────────────────────
+let wSortKey = "wealthSignal", wSortDir = 1;
+function wSortBy(key) {
+  if (wSortKey===key) wSortDir*=-1; else { wSortKey=key; wSortDir=1; }
+  renderWealth();
+}
+
+function renderWealthCards() {
+  const counts = {};
+  results.forEach(r => { counts[r.wealthSignal]=(counts[r.wealthSignal]||0)+1; });
+  const cards = [
+    { label:"Buy",     key:"buy",  bg:"#065f46", fg:"#d1fae5", icon:"🟢" },
+    { label:"Sell",    key:"sell", bg:"#92400e", fg:"#fef3c7", icon:"↓"  },
+    { label:"Hold",    key:"hold", bg:"#1e293b", fg:"#94a3b8", icon:"—"  },
+    { label:"Scanned", key:"_all", bg:"#1d4ed8", fg:"#93c5fd", icon:"📋" },
+  ];
+  document.getElementById("wealth-cards").innerHTML = cards.map(c => `
+    <div style="background:#1e293b;border-radius:10px;padding:16px 18px;border-left:4px solid ${c.bg}">
+      <div style="font-size:28px;font-weight:800;color:${c.fg}">${c.key==='_all'?results.length:(counts[c.key]||0)}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px">${c.icon} ${c.label}</div>
+    </div>`).join("");
+}
+
+function renderWealth() {
+  const q        = (document.getElementById("wealth-search").value||"").toUpperCase();
+  const filt     = document.getElementById("wealth-filter").value;
+  const ownedOnly = document.getElementById("wealth-owned").checked;
+  const hasData  = results.some(r => r.wealthSignal != null);
+  const notice   = document.getElementById("wealth-notice");
+  if (notice) notice.style.display = hasData ? "none" : "";
+  let rows = results.filter(r =>
+    (!q || r.sym.includes(q)) && (!filt || r.wealthSignal===filt) && (!ownedOnly || r.isOwned));
+  const WO = { "buy":0, "sell":1, "hold":2 };
+  rows = [...rows].sort((a,b) => {
+    let va = a[wSortKey], vb = b[wSortKey];
+    if (wSortKey==="wealthSignal") { va=WO[a.wealthSignal]??9; vb=WO[b.wealthSignal]??9; }
+    if (typeof va==="string") return wSortDir*(va.localeCompare(vb));
+    return wSortDir*((va??-Infinity)-(vb??-Infinity));
+  });
+  const WCHIP = {
+    buy:  '<span class="signal-chip b">BUY</span>',
+    sell: '<span class="signal-chip s">SELL</span>',
+    hold: '<span class="signal-chip h">HOLD</span>',
+  };
+  document.getElementById("wealth-count").textContent = rows.length+" symbols";
+  document.getElementById("wealth-tbody").innerHTML = rows.map(r => `<tr>
+    <td style="font-weight:700">${r.sym}</td><td>${fmt(r.price)}</td>
+    <td>${r.ma20w!=null?fmt(r.ma20w):"—"}</td>
+    <td>${r.rsiW!=null?rsiCell(r.rsiW):"—"}</td>
+    <td>${WCHIP[r.wealthSignal]||'<span class="signal-chip h">—</span>'}</td>
+    <td style="color:#3b82f6">${r.isOwned?"✓":""}</td>
+    <td style="color:#64748b">${r.date||""}</td>
+  </tr>`).join("");
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+setChartMode('ema');
+renderSummary();
+renderDashSignals();
+renderDashPortfolio();
+renderSignals();
+renderPortfolio();
+renderUniverse();
+renderWealthCards();
+renderWealth();
+</script>
+</body>
+</html>
